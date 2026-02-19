@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 import pickle
-from tensorflow.keras.models import load_model
+from keras.models import load_model
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.preprocessing import MinMaxScaler
 
@@ -216,7 +216,7 @@ def _load_drone_resources(uav_model_name: str) -> dict:
 # =========================================================
 # 4. PREPROCESSING ROUTER (unchanged)
 # =========================================================
-routing_dict = {
+ROUTING_DICT = {
     "DJI_Matrice_210": matrice_210.preprocess,
     "DJI_Matrice_600": matrice_600.preprocess,
     "DJI_Mavic_2_Zoom": mavic_2_zoom.preprocess,
@@ -227,7 +227,7 @@ routing_dict = {
 
 
 def preprocess_data(dataframe, uav_model_name: str):
-    func = routing_dict.get(uav_model_name)
+    func = ROUTING_DICT.get(uav_model_name)
     if func is None:
         raise ValueError(f"Unknown UAV model: '{uav_model_name}'")
     return func(dataframe)
@@ -355,4 +355,3 @@ def run_predictions(preprocessed_data, original_df, uav_model_name: str):
         }
 
     return results
-
