@@ -1,0 +1,157 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UAV Trajectory Prediction</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdn.plot.ly/plotly-2.30.1.min.js"></script>
+
+  </head>
+  <body>
+    <header>
+      <h1>UAV Trajectory Prediction Dashboard 🚁</h1>
+    </header>
+    <main>
+      <div class="control-panel card">
+        <h2>Controls</h2>
+        <form id="upload-form">
+          <div class="form-group">
+            <label for="uav-model-select">1. Select UAV Model:</label>
+            <select id="uav-model-select" name="uav_model" required>
+              <option value="" disabled selected>-- Choose a model --</option>
+              <option value="DJI_Matrice_210">DJI Matrice 210</option>
+              <option value="DJI_Matrice_600">DJI Matrice 600</option>
+              <option value="DJI_Mavic_2_Zoom">DJI Mavic 2 Zoom</option>
+              <option value="DJI_Mavic_Pro">DJI Mavic Pro</option>
+              <option value="DJI_Phantom_4">DJI Phantom 4</option>
+              <option value="DJI_Phantom_4_Pro_V2">DJI Phantom 4 Pro V2</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="file-upload">2. Upload Flight Log (.csv):</label>
+            <input
+              type="file"
+              id="file-upload"
+              name="flight_log"
+              accept=".csv"
+              required
+            />
+          </div>
+          <button type="submit" id="submit-btn">Predict Trajectory</button>
+        </form>
+      </div>
+
+      <div id="results-container" class="hidden">
+        <div class="card">
+          <h2>3D Predicted Trajectory</h2>
+          <div id="plot-loader" class="loader hidden"></div>
+          <div id="plot-container"></div>
+        </div>
+        <div class="card">
+          <h2>Model Performance Comparison</h2>
+          <div id="metrics-loader" class="loader hidden"></div>
+          <div id="metrics-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>DL Model</th>
+                  <th>RMSE</th>
+                  <th>MAE</th>
+                </tr>
+              </thead>
+              <tbody id="metrics-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script src="script.js"></script>
+  </body>
+</html> -->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UAV Trajectory Prediction</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdn.plot.ly/plotly-2.30.1.min.js"></script>
+  </head>
+
+  <body>
+    <header>
+      <h1>UAV Trajectory Prediction Dashboard 🚁</h1>
+    </header>
+
+    <main>
+      <div class="control-panel card">
+        <h2>Controls</h2>
+
+        <!-- FIXED FORM ID -->
+        <form id="predictForm">
+          <div class="form-group">
+            <label for="uav-model-select">1. Select UAV Model:</label>
+            <select id="uav-model-select" name="uav_model" required>
+              <option value="" disabled selected>-- Choose a model --</option>
+              <option value="DJI_Matrice_210">DJI Matrice 210</option>
+              <option value="DJI_Matrice_600">DJI Matrice 600</option>
+              <option value="DJI_Mavic_2_Zoom">DJI Mavic 2 Zoom</option>
+              <option value="DJI_Mavic_Pro">DJI Mavic Pro</option>
+              <option value="DJI_Phantom_4">DJI Phantom 4</option>
+              <option value="DJI_Phantom_4_Pro_V2">DJI Phantom 4 Pro V2</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="file-upload">2. Upload Flight Log (.csv):</label>
+            <input
+              type="file"
+              id="file-upload"
+              name="flight_log"
+              accept=".csv"
+              required
+            />
+          </div>
+
+          <button type="submit" id="submit-btn">Predict Trajectory</button>
+        </form>
+      </div>
+
+      <div id="results-container" class="hidden">
+
+        <div class="card" style="margin-bottom: 40px;">
+          <h2>2D Predicted Trajectory (Longitude vs Latitude)</h2>
+          <div id="plot-2d" style="width: 100%; height: 550px;"></div>
+        </div>
+
+        <div class="card">
+          <h2>3D Predicted Trajectory</h2>
+          <div id="plot-loader" class="loader hidden"></div>
+          <div id="plot-container"></div>
+        </div>
+
+        <div class="card">
+          <h2>Model Performance Comparison</h2>
+          <div id="metrics-loader" class="loader hidden"></div>
+          <div id="metrics-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>DL Model</th>
+                  <th>RMSE</th>
+                  <th>MAE</th>
+                </tr>
+              </thead>
+              <tbody id="metrics-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
+
