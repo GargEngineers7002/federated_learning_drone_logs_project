@@ -18,17 +18,14 @@ from website_work.app.federated_learning.utils import (
 class DroneClient(NumPyClient):
     def __init__(self, uav_model, df):
         self.uav_model = uav_model
+        print(f"    [NODE-FL] Initializing training client for {uav_model}...")
         
-        # Preprocess the data for training
-        # Note: In a real scenario, we'd use more sophisticated training data management
-        # For now, we use the same data that was uploaded for prediction
         preprocessed = preprocess_data(df.copy(), uav_model)
         preprocessed = preprocessed.fillna(0)
         
-        # Prepare sequences (assuming 50 timesteps)
         X, y = [], []
         seq_length = 50
-        scaled_data = preprocessed.values # raw for demonstration
+        scaled_data = preprocessed.values 
         
         if len(scaled_data) > seq_length:
             for i in range(len(scaled_data) - seq_length):
@@ -37,11 +34,9 @@ class DroneClient(NumPyClient):
             self.x_train = np.array(X)
             self.y_train = np.array(y)
         else:
-            # Fallback if data is too short
             self.x_train = np.zeros((1, 50, preprocessed.shape[1]))
             self.y_train = np.zeros((1, 3))
 
-        # Initialize model
         input_shape = (self.x_train.shape[1], self.x_train.shape[2])
         self.model = create_lstm_model(input_shape)
 
@@ -49,58 +44,69 @@ class DroneClient(NumPyClient):
         return get_model_parameters(self.model)
 
     def fit(self, parameters, config):
+        print(f"    [NODE-FL] Round started. Training on local data...")
         set_model_parameters(self.model, parameters)
-        # Train for 1 epoch on the received data
         self.model.fit(self.x_train, self.y_train, epochs=1, batch_size=32, verbose=0)
+        print(f"    [NODE-FL] Training finished. Sending updated weights to server.")
         return get_model_parameters(self.model), len(self.x_train), {"uav_model": self.uav_model}
 
     def evaluate(self, parameters, config):
         set_model_parameters(self.model, parameters)
         loss, mae = self.model.evaluate(self.x_train, self.y_train, verbose=0)
+        print(f"    [NODE-FL] Evaluation: Loss={loss:.4f}, MAE={mae:.4f}")
         return loss, len(self.x_train), {"mae": mae}
 
 
 def process_job(job_id, uav_model, csv_data, website_api_url, fl_server_address):
-    """
-    1. Runs local prediction.
-    2. Uploads results to central server.
-    3. Participates in FL round.
-    """
-    print(f"[*] Processing job {job_id} for {uav_model}...")
+    print("\n" + "-"*40)
+    print(f"🛠️  PROCESSING JOB: {job_id}")
+    print(f"📦 UAV Model: {uav_model}")
+    print("-"*40)
     
     # 1. Prediction
+    print("[1/3] Running trajectory prediction...")
     df = pd.read_csv(io.StringIO(csv_data))
     preprocessed = preprocess_data(df.copy(), uav_model)
-    
-    # Clean raw data
     df_clean = df.replace([float("inf"), float("-inf")], 0).ffill().bfill().fillna(0)
     
     results = run_predictions(preprocessed, df_clean, uav_model)
     
     # 2. Upload Prediction Results
+    print("[2/3] Submitting results to Central Hub...")
     submit_url = f"{website_api_url}/api/node/submit_results"
     payload = {"job_id": job_id, "results": results}
     try:
         resp = requests.post(submit_url, json=payload)
-        print(f"    [+] Prediction results submitted: {resp.status_code}")
+        if resp.status_code == 200:
+            print(f"✅ SUCCESS: Results accepted by Hub.")
+        else:
+            print(f"❌ ERROR: Hub rejected results (Status: {resp.status_code})")
     except Exception as e:
-        print(f"    [!] Failed to submit results: {e}")
+        print(f"❌ ERROR: Connection failed during result submission: {e}")
 
     # 3. FL Training Round
-    print(f"    [*] Starting FL training round for job {job_id}...")
+    print("[3/3] Joining Federated Learning training round...")
     try:
-        # Start a one-round client
         start_numpy_client(
             server_address=fl_server_address,
             client=DroneClient(uav_model, df),
         )
-        print(f"    [+] FL round completed.")
+        print(f"✅ SUCCESS: FL training round finished.")
     except Exception as e:
-        print(f"    [!] FL training failed: {e}")
+        print(f"⚠️  WARNING: FL training failed or timed out: {e}")
+    
+    print("-"*40)
+    print("✨ Job Complete. Returning to standby.")
 
 
 def worker_loop(website_api_url, fl_server_address):
-    print(f"[*] Node worker started. Polling {website_api_url}...")
+    print("\n" + "="*50)
+    print("🛰️  WORKER NODE INITIALIZED")
+    print(f"📍 Hub API: {website_api_url}")
+    print(f"📍 FL Server: {fl_server_address}")
+    print("="*50)
+    print("[*] Polling for jobs...")
+    
     while True:
         try:
             resp = requests.get(f"{website_api_url}/api/node/get_job")
@@ -114,14 +120,15 @@ def worker_loop(website_api_url, fl_server_address):
                         website_api_url,
                         fl_server_address
                     )
+                    print("\n[*] Polling for new jobs...")
                 else:
-                    # No jobs, wait a bit
+                    # No jobs, silent wait
                     time.sleep(2)
             else:
-                print(f"[!] Server error: {resp.status_code}")
+                print(f"[!] Server returned error: {resp.status_code}")
                 time.sleep(5)
         except Exception as e:
-            print(f"[!] Connection error: {e}")
+            print(f"[!] Connection to Hub failed: {e}")
             time.sleep(5)
 
 

@@ -38,17 +38,27 @@ website_work/
     pip install -r requirements.txt
     ```
 
-2.  **Start the Central Hub:**
+2.  **Export PYTHONPATH:**
+    Crucial for resolving module imports across the project. Run this from the project root:
+    ```bash
+    export PYTHONPATH=$PYTHONPATH:.
+    ```
+
+3.  **Start the Central Hub:**
     The hub starts both the Web API (port 8000) and the FL Server (port 8080).
     ```bash
     python website_work/app/main.py
     ```
 
-3.  **Start a Worker Node:**
+4.  **Start a Worker Node:**
     Run this on the machine(s) equipped with the models and training data.
     ```bash
     python website_work/app/federated_learning/fl_client.py --website_url http://localhost:8000 --fl_server localhost:8080
     ```
+
+## Notes on Hardware & Errors
+*   **GPU Warnings:** You may see `Could not find cuda drivers`. This is expected and the system will gracefully fallback to **CPU Mode**.
+*   **Flower Warnings:** The Flower server may show deprecation warnings regarding `start_server`. These can be ignored for this implementation.
 
 ## Usage Workflow
 
@@ -57,8 +67,3 @@ website_work/
 3.  **Node Processing:** A Worker Node pulls the job, runs the prediction, and sends the trajectory back.
 4.  **Result Display:** The Hub marks the job as complete, and the web interface displays the 2D/3D trajectory and performance metrics.
 5.  **Federated Learning:** In the background, the Node and Hub engage in an FL training round using the uploaded data to refine the global model.
-
-## Security & Privacy
-
-*   **Data Privacy:** Raw flight logs remain on the Worker Node during the training phase. Only model weights (gradients) are transmitted to the FL server.
-*   **Internal Communication:** Node endpoints are designed for internal use by authorized hardware.

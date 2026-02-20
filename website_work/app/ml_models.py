@@ -6,36 +6,27 @@ from keras.models import load_model
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.preprocessing import MinMaxScaler
 
-# --- 1. IMPORT PREPROCESSING SCRIPTS ---
-try:
-    from app.preprocessing_scripts import (
-        matrice_210,
-        matrice_600,
-        mavic_2_zoom,
-        mavic_pro,
-        phantom_4,
-        phantom_4_pro_v2,
-    )
-except ImportError:
-    from preprocessing_scripts import (
-        matrice_210,
-        matrice_600,
-        mavic_2_zoom,
-        mavic_pro,
-        phantom_4,
-        phantom_4_pro_v2,
-    )
+# Standardize imports to project root
+from website_work.app.preprocessing_scripts import (
+    matrice_210,
+    matrice_600,
+    mavic_2_zoom,
+    mavic_pro,
+    phantom_4,
+    phantom_4_pro_v2,
+)
 
 # =========================================================
 # 2. PER-DRONE CONFIGURATION
 # =========================================================
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-BASE_DIR = os.path.dirname(CURRENT_DIR)  # Parent of app/ is root
-MODELS_DIR = os.path.join(BASE_DIR, "models")
-TRAINING_DATA_DIR = os.path.join(BASE_DIR, "20Jan")
+# app/ is current_dir. website_work/ is parent. root is grandparent.
+BASE_DIR = os.path.dirname(os.path.dirname(CURRENT_DIR)) 
+MODELS_DIR = os.path.join(BASE_DIR, "website_work", "models")
+# TRAINING_DATA_DIR = os.path.join(BASE_DIR, "20Jan") # If needed later
 
 # Each drone maps to:
-#   folder:  subfolder name in models/ and 20Jan/
+#   folder:  subfolder name in models/
 #   targets: the 3 target column names for that drone
 DRONE_CONFIG = {
     "DJI_Matrice_210": {
@@ -96,9 +87,6 @@ MODEL_FILES = {
 # =========================================================
 # 3. LAZY-LOADING CACHE
 # =========================================================
-# Keyed by drone folder name. Each entry stores:
-#   { "models": {...}, "input_scaler": ..., "target_scaler": ...,
-#     "input_columns": [...], "target_cols": [...] }
 _drone_cache = {}
 
 
@@ -120,7 +108,6 @@ def _load_drone_resources(uav_model_name: str) -> dict:
     print(f"[INFO] Loading resources for '{uav_model_name}' (folder: {folder})...")
 
     drone_models_dir = os.path.join(MODELS_DIR, folder)
-    drone_training_dir = os.path.join(TRAINING_DATA_DIR, folder)
     target_cols = config["targets"]
 
     # ------- Load Models -------
@@ -142,12 +129,11 @@ def _load_drone_resources(uav_model_name: str) -> dict:
             f"Please place .keras files there."
         )
 
-    # ------- Load / Fit Scalers -------
+    # ------- Load Scalers -------
     input_scaler = None
     target_scaler = None
     input_columns = []
 
-    # Strategy 1: Try loading pickled scalers from the drone's model folder
     scaler_path = os.path.join(drone_models_dir, "scaler.pkl")
     target_scaler_path = os.path.join(drone_models_dir, "target_scaler.pkl")
     try:
@@ -159,46 +145,6 @@ def _load_drone_resources(uav_model_name: str) -> dict:
             print(f"  ✅ Loaded pre-trained scalers from pickles.")
     except Exception as e:
         print(f"  ⚠️ Could not load pickle scalers: {e}")
-
-    # Strategy 2: Fit scalers from training data
-    if input_scaler is None:
-        training_csv = os.path.join(drone_training_dir, "preprocced_dataset.csv")
-        if os.path.exists(training_csv):
-            print(f"  ⚠️ Fitting scalers from training data: {training_csv}")
-            df_train = pd.read_csv(training_csv)
-
-            # Input features = all columns minus targets
-            X_train = df_train.drop(columns=target_cols, errors="ignore")
-            input_columns = list(X_train.columns)
-
-            input_scaler = MinMaxScaler(feature_range=(0, 1))
-            input_scaler.fit(X_train)
-
-            # Target scaler
-            available_targets = [c for c in target_cols if c in df_train.columns]
-            y_train = df_train[available_targets]
-            target_scaler = MinMaxScaler(feature_range=(0, 1))
-            target_scaler.fit(y_train)
-
-            print(
-                f"  ✅ Scalers fitted on {len(input_columns)} input features, "
-                f"{len(available_targets)} targets."
-            )
-
-            # Save pickles for next time
-            try:
-                with open(scaler_path, "wb") as f:
-                    pickle.dump(input_scaler, f)
-                with open(target_scaler_path, "wb") as f:
-                    pickle.dump(target_scaler, f)
-                print(f"  ✅ Saved scalers to {drone_models_dir}")
-            except Exception as e:
-                print(f"  ⚠️ Could not save scalers: {e}")
-        else:
-            print(
-                f"  ⚠️ ERROR: Training data not found at '{training_csv}'. "
-                f"Predictions will use raw values (likely inaccurate)."
-            )
 
     # Cache everything
     entry = {
@@ -214,7 +160,7 @@ def _load_drone_resources(uav_model_name: str) -> dict:
 
 
 # =========================================================
-# 4. PREPROCESSING ROUTER (unchanged)
+# 4. PREPROCESSING ROUTER
 # =========================================================
 ROUTING_DICT = {
     "DJI_Matrice_210": matrice_210.preprocess,
@@ -234,7 +180,7 @@ def preprocess_data(dataframe, uav_model_name: str):
 
 
 # =========================================================
-# 5. PREDICTION FUNCTION (now per-drone)
+# 5. PREDICTION FUNCTION
 # =========================================================
 def run_predictions(preprocessed_data, original_df, uav_model_name: str):
     """Run all model predictions for the given drone type."""
@@ -248,20 +194,7 @@ def run_predictions(preprocessed_data, original_df, uav_model_name: str):
     target_cols = resources["target_cols"]
 
     # 1. Prepare Input Features
-    X_features = None
-
-    if input_columns:
-        # Align columns exactly to what the scaler was fitted on
-        common_cols = [c for c in input_columns if c in preprocessed_data.columns]
-        if len(common_cols) == len(input_columns):
-            X_features = preprocessed_data[input_columns]
-        else:
-            missing = set(input_columns) - set(preprocessed_data.columns)
-            print(f"⚠️ Missing columns for scaler: {missing}. Using fallback.")
-
-    if X_features is None:
-        # Fallback: drop target columns to derive features
-        X_features = preprocessed_data.drop(columns=target_cols, errors="ignore")
+    X_features = preprocessed_data.drop(columns=target_cols, errors="ignore")
 
     # Fill NaNs
     X_features = X_features.fillna(0)
@@ -334,19 +267,11 @@ def run_predictions(preprocessed_data, original_df, uav_model_name: str):
                 },
                 "metrics": metrics,
             }
-            if ground_truth is not None:
-                print(f"  ✅ {name} — RMSE: {rmse:.4f}")
-            else:
-                print(f"  ✅ {name} — Predictions generated")
-
         except Exception as e:
             print(f"  ❌ {name} Error: {e}")
-            import traceback
-
-            traceback.print_exc()
             results[name] = {"error": str(e)}
 
-    # 6. Add Actual Trajectory to response (shared across all models)
+    # 6. Add Actual Trajectory to response
     if ground_truth is not None and len(ground_truth) > 0:
         results["actual_trajectory"] = {
             "x": ground_truth[:, 0].tolist(),

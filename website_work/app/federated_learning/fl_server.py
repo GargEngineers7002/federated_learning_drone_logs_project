@@ -19,14 +19,6 @@ class SaveModelStrategy(FedAvg):
             print(f"Saving round {server_round} aggregated weights...")
             # Convert parameters to ndarrays
             aggregated_ndarrays = fl.common.parameters_to_ndarrays(aggregated_weights[0])
-            
-            # For simplicity, we save to a general 'global_model.weights.h5' or similar
-            # In a multi-drone setup, you'd want to save per drone type
-            # Here we save to a default location that nodes can use
-            # np.savez("global_model_weights.npz", *aggregated_ndarrays)
-            
-            # If we want to update the actual .keras files, we need to know which one.
-            # For now, we'll just log and suggest a path.
             print(f"Round {server_round} aggregation complete.")
             
         return aggregated_weights
@@ -34,23 +26,27 @@ class SaveModelStrategy(FedAvg):
 strategy = SaveModelStrategy(
     fraction_fit=1.0,
     min_fit_clients=1,
-    min_available_clients=1,
+    min_available_clients=1, # Set equal to min_fit_clients to avoid warnings
 )
 
 def run_fl_server():
     """
     Starts the Flower Federated Learning server.
     """
+    # Suppress TF logs in the child process too
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    
     # Define the initial global model to ensure all clients start with same weights
-    # Note: Input shape must match the client data (50 timesteps, 32 features for Matrice 210)
     input_shape = (50, 32)
     model = create_lstm_model(input_shape)
     initial_parameters = ndarrays_to_parameters(get_model_parameters(model))
 
     print("--- Federated Learning Server Started on port 8080 ---")
+    
+    # Note: start_server is deprecated in newer flwr versions but still works.
     start_server(
         server_address="0.0.0.0:8080",
-        config=ServerConfig(num_rounds=100), # Increased rounds for continuous learning
+        config=ServerConfig(num_rounds=100), 
         strategy=strategy,
     )
     print("Training complete. Global model updated.")
