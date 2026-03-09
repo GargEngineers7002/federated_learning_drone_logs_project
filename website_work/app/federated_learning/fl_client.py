@@ -1,11 +1,14 @@
 import os
+
+# Suppress TensorFlow logs
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
 import requests
 import pandas as pd
 import io
 import time
 import numpy as np
 from flwr.client import NumPyClient, start_numpy_client
-import tensorflow as tf
 from website_work.app.ml_models import preprocess_data, run_predictions
 from website_work.app.federated_learning.utils import (
     create_lstm_model,
@@ -19,14 +22,14 @@ class DroneClient(NumPyClient):
     def __init__(self, uav_model, df):
         self.uav_model = uav_model
         print(f"    [NODE-FL] Initializing training client for {uav_model}...")
-        
+
         preprocessed = preprocess_data(df.copy(), uav_model)
         preprocessed = preprocessed.fillna(0)
-        
+
         X, y = [], []
         seq_length = 50
-        scaled_data = preprocessed.values 
-        
+        scaled_data = preprocessed.values
+
         if len(scaled_data) > seq_length:
             for i in range(len(scaled_data) - seq_length):
                 X.append(scaled_data[i : i + seq_length])
@@ -44,33 +47,47 @@ class DroneClient(NumPyClient):
         return get_model_parameters(self.model)
 
     def fit(self, parameters, config):
-        print(f"    [NODE-FL] Round started. Training on local data...")
+        print("  [NODE-FL] Round started. Training on local data...")
         set_model_parameters(self.model, parameters)
-        self.model.fit(self.x_train, self.y_train, epochs=1, batch_size=32, verbose=0)
-        print(f"    [NODE-FL] Training finished. Sending updated weights to server.")
-        return get_model_parameters(self.model), len(self.x_train), {"uav_model": self.uav_model}
+        history = self.model.fit(
+            self.x_train, self.y_train, epochs=1, batch_size=32, verbose=0
+        )
+        print("    [NODE-FL] Training finished. Sending updated weights to server.")
+        return (
+            get_model_parameters(self.model),
+            len(self.x_train),
+            {
+                "loss": history.history["loss"][0],
+                "mae": history.history["mae"][0],
+                "uav_model": self.uav_model,
+            },
+        )
 
     def evaluate(self, parameters, config):
         set_model_parameters(self.model, parameters)
         loss, mae = self.model.evaluate(self.x_train, self.y_train, verbose=0)
         print(f"    [NODE-FL] Evaluation: Loss={loss:.4f}, MAE={mae:.4f}")
-        return loss, len(self.x_train), {"mae": mae}
+        return (
+            float(loss),
+            len(self.x_train),
+            {"mae": float(mae), "uav_model": self.uav_model},
+        )
 
 
 def process_job(job_id, uav_model, csv_data, website_api_url, fl_server_address):
-    print("\n" + "-"*40)
+    print("\n" + "-" * 40)
     print(f"🛠️  PROCESSING JOB: {job_id}")
     print(f"📦 UAV Model: {uav_model}")
-    print("-"*40)
-    
+    print("-" * 40)
+
     # 1. Prediction
     print("[1/3] Running trajectory prediction...")
     df = pd.read_csv(io.StringIO(csv_data))
     preprocessed = preprocess_data(df.copy(), uav_model)
     df_clean = df.replace([float("inf"), float("-inf")], 0).ffill().bfill().fillna(0)
-    
+
     results = run_predictions(preprocessed, df_clean, uav_model)
-    
+
     # 2. Upload Prediction Results
     print("[2/3] Submitting results to Central Hub...")
     submit_url = f"{website_api_url}/api/node/submit_results"
@@ -94,19 +111,19 @@ def process_job(job_id, uav_model, csv_data, website_api_url, fl_server_address)
         print(f"✅ SUCCESS: FL training round finished.")
     except Exception as e:
         print(f"⚠️  WARNING: FL training failed or timed out: {e}")
-    
-    print("-"*40)
+
+    print("-" * 40)
     print("✨ Job Complete. Returning to standby.")
 
 
 def worker_loop(website_api_url, fl_server_address):
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("🛰️  WORKER NODE INITIALIZED")
     print(f"📍 Hub API: {website_api_url}")
     print(f"📍 FL Server: {fl_server_address}")
-    print("="*50)
+    print("=" * 50)
     print("[*] Polling for jobs...")
-    
+
     while True:
         try:
             resp = requests.get(f"{website_api_url}/api/node/get_job")
@@ -118,7 +135,7 @@ def worker_loop(website_api_url, fl_server_address):
                         job_data["uav_model"],
                         job_data["data"],
                         website_api_url,
-                        fl_server_address
+                        fl_server_address,
                     )
                     print("\n[*] Polling for new jobs...")
                 else:

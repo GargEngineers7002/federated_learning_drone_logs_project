@@ -1,7 +1,5 @@
-import os
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout, BatchNormalization
 from website_work.app.ml_models import DRONE_CONFIG, preprocess_data

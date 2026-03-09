@@ -1,18 +1,14 @@
 import uuid
 import asyncio
-import io
-import json
 import os
 import multiprocessing
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
 from typing import Annotated, Dict, List
-import pandas as pd
-import numpy as np
 from contextlib import asynccontextmanager
 
 # Suppress TensorFlow GPU warnings if CPU-only is expected
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 # Import FL server components
 from website_work.app.federated_learning.fl_server import run_fl_server
@@ -28,10 +24,10 @@ job_queue: List[str] = []
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Startup Logic ---
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("🚀 STARTING CENTRAL HUB (CPU Mode)")
-    print("="*50)
-    
+    print("=" * 50)
+
     # Use multiprocessing instead of threading because Flower's start_server
     # registers signal handlers which only work in the main thread.
     fl_process = multiprocessing.Process(target=run_fl_server, daemon=True)
@@ -43,9 +39,9 @@ async def lifespan(app: FastAPI):
     # --- Shutdown Logic ---
     if fl_process.is_alive():
         fl_process.terminate()
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("🛑 SHUTTING DOWN CENTRAL HUB")
-    print("="*50)
+    print("=" * 50)
 
 
 app = FastAPI(title="UAV Trajectory Prediction Central Hub", lifespan=lifespan)
@@ -157,5 +153,6 @@ app.mount(
 
 if __name__ == "__main__":
     import uvicorn
+
     print("\n🔍 Launching Uvicorn server on http://localhost:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000)

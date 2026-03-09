@@ -21,7 +21,7 @@ from website_work.app.preprocessing_scripts import (
 # =========================================================
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 # app/ is current_dir. website_work/ is parent. root is grandparent.
-BASE_DIR = os.path.dirname(os.path.dirname(CURRENT_DIR)) 
+BASE_DIR = os.path.dirname(os.path.dirname(CURRENT_DIR))
 MODELS_DIR = os.path.join(BASE_DIR, "website_work", "models")
 # TRAINING_DATA_DIR = os.path.join(BASE_DIR, "20Jan") # If needed later
 
@@ -208,6 +208,7 @@ def run_predictions(preprocessed_data, original_df, uav_model_name: str):
         except Exception as e:
             print(f"Scaler Error: {e}. Using raw values.")
             X_scaled = X_features.values
+            X_scaled = np.nan_to_num(X_scaled, nan=0.0)
     else:
         X_scaled = X_features.values
         X_scaled = np.nan_to_num(X_scaled, nan=0.0)
@@ -215,7 +216,7 @@ def run_predictions(preprocessed_data, original_df, uav_model_name: str):
     # 3. Create Sliding Windows
     SEQ_LENGTH = 50
     X_sequences = []
-    for i in range(len(X_scaled) - SEQ_LENGTH + 1):
+    for i in range(len(X_scaled) - SEQ_LENGTH):
         X_sequences.append(X_scaled[i : i + SEQ_LENGTH])
     X_sequences = np.array(X_sequences)
 
