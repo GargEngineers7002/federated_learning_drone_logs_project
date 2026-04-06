@@ -53,6 +53,111 @@ document.addEventListener("DOMContentLoaded", () => {
       submitBtn.disabled = false;
       submitBtn.textContent = "Predict Trajectory";
     }
+
+    try {
+      const gFormData = new FormData();
+      gFormData.append("uav_model", formData.get("uav_model"));
+      const response_global_model = await fetch("/api/get_global", {
+        method: "POST",
+        body: gFormData,
+      });
+
+      if (!response_global_model.ok) {
+        const errorData = await response_global_model.json();
+        throw new Error(
+          errorData.detail || `HTTP ${response_global_model.status}`,
+        );
+      }
+
+      const global_data = await response_global_model.json();
+      const weights = global_data.weights;
+
+      if (!weights || weights.length === 0) {
+        throw new Error("Invalid weights received");
+      }
+
+      console.log("received weights");
+
+      const response_process_data = await fetch("/api/get_processed", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response_process_data.ok) {
+        const errorData = await response_process_data.json();
+        throw new Error(
+          errorData.detail || `HTTP ${response_process_data.status}`,
+        );
+      }
+
+      const processed_data_raw = await response_process_data.json();
+      const x_train = tf.tensor3d(processed_data_raw.x);
+      const y_train = tf.tensor2d(processed_data_raw.y);
+
+      console.log("received processed data");
+
+      const input_features = weights[0].length;
+      const units = weights[0][0].length / 4;
+      const seq_len = processed_data_raw.x[0].length;
+
+      const model = tf.sequential();
+      model.add(
+        tf.layers.lstm({
+          units: units,
+          inputShape: [seq_len, input_features],
+          returnSequences: false,
+        }),
+      );
+      model.add(tf.layers.dense({ units: weights[weights.length - 1].length }));
+
+      // Set weights
+      const tensors = weights.map((w) => tf.tensor(w));
+      model.setWeights(tensors);
+      tensors.forEach((t) => t.dispose());
+
+      model.compile({
+        optimizer: tf.train.adam(),
+        loss: "meanSquaredError",
+      });
+
+      console.log("training model...");
+      await model.fit(x_train, y_train, {
+        epochs: 1,
+        batchSize: 32,
+        verbose: 0,
+      });
+
+      console.log("training done");
+
+      // Extract new weights
+      const modelWeights = model.getWeights();
+      const new_weights = modelWeights.map((t) => t.arraySync());
+      modelWeights.forEach((t) => t.dispose());
+
+      // Dispose training data and model
+      x_train.dispose();
+      y_train.dispose();
+      model.dispose();
+
+      // Return for federated averaging
+      const flFormData = new FormData();
+      flFormData.append("uav_model", formData.get("uav_model"));
+      flFormData.append("weights", JSON.stringify(new_weights));
+
+      const flResponse = await fetch("/api/federated_averaging", {
+        method: "POST",
+        body: flFormData,
+      });
+
+      if (!flResponse.ok) {
+        const errorData = await flResponse.json();
+        throw new Error(errorData.detail || `HTTP ${flResponse.status}`);
+      }
+
+      console.log("federated averaging data sent");
+    } catch (error) {
+      console.error("FL Error:", error);
+    }
   });
 
   function displayResults(results) {

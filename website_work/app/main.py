@@ -7,44 +7,19 @@ from fastapi.staticfiles import StaticFiles
 from typing import Annotated, Dict, List
 from contextlib import asynccontextmanager
 
+# Import FL server components
+from website_work.app.fl import (
+    process_job,
+    get_global_model,
+    get_processed_data,
+    federated_average,
+)
+
 # Suppress TensorFlow GPU warnings if CPU-only is expected
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-# Import FL server components
-from website_work.app.federated_learning.fl_server import run_fl_server
 
-
-# -----------------------
-# IN-MEMORY JOB STORE
-# -----------------------
-jobs: Dict[str, dict] = {}
-job_queue: List[str] = []
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # --- Startup Logic ---
-    print("\n" + "=" * 50)
-    print("🚀 STARTING CENTRAL HUB (CPU Mode)")
-    print("=" * 50)
-
-    # Use multiprocessing instead of threading because Flower's start_server
-    # registers signal handlers which only work in the main thread.
-    fl_process = multiprocessing.Process(target=run_fl_server, daemon=True)
-    fl_process.start()
-    print("✅ FL Server (Flower) started in background process.")
-
-    yield  # The FastAPI app runs during this yield
-
-    # --- Shutdown Logic ---
-    if fl_process.is_alive():
-        fl_process.terminate()
-    print("\n" + "=" * 50)
-    print("🛑 SHUTTING DOWN CENTRAL HUB")
-    print("=" * 50)
-
-
-app = FastAPI(title="UAV Trajectory Prediction Central Hub", lifespan=lifespan)
+app = FastAPI(title="UAV Trajectory Prediction Central Hub")
 
 
 # -----------------------
@@ -73,33 +48,14 @@ async def predict_trajectory(
         contents = await flight_log.read()
         csv_str = contents.decode("utf-8")
 
-        job_id = str(uuid.uuid4())
-        jobs[job_id] = {
-            "status": "pending",
-            "uav_model": uav_model,
-            "data": csv_str,
-            "results": None,
-        }
-        job_queue.append(job_id)
+        job_id = str(uuid.uuid4())  # Generate a unique job ID
 
-        print(f"[HUB] Job created with ID: {job_id}")
-        print(f"[HUB] Current Queue Size: {len(job_queue)}")
-
-        # 2. Wait for a node to process it
-        timeout = 120  # seconds
-        start_time = asyncio.get_event_loop().time()
-        while jobs[job_id]["status"] == "pending":
-            if asyncio.get_event_loop().time() - start_time > timeout:
-                print(f"[HUB] TIMEOUT: Job {job_id} expired waiting for node.")
-                raise HTTPException(
-                    status_code=504, detail="Processing timeout. No nodes available."
-                )
-            await asyncio.sleep(1)
+        results = await process_job(job_id, uav_model, csv_str)  # Run prediction
 
         print(f"[HUB] Returning results for Job {job_id} to user.")
         return {
             "uav_model": uav_model,
-            "results": jobs[job_id]["results"],
+            "results": results,
             "job_id": job_id,
         }
 
@@ -108,37 +64,39 @@ async def predict_trajectory(
         raise HTTPException(status_code=500, detail=f"Server Error: {str(e)}")
 
 
-# -----------------------
-# NODE ENDPOINTS (Internal)
-# -----------------------
+@app.post("/api/get_global")
+async def get_global(uav_model: Annotated[str, Form()]):
+    try:
+        global_model_weights = await get_global_model(uav_model)
+        return global_model_weights
+    except Exception as e:
+        print(f"[HUB] ERROR in get_global: {e}")
+        raise HTTPException(status_code=500, detail=f"Server Error: {str(e)}")
 
 
-@app.get("/api/node/get_job")
-async def get_job():
-    """Nodes call this to get a job."""
-    if not job_queue:
-        return {"job": None}
+@app.post("/api/get_processed")
+async def get_processed(
+    uav_model: Annotated[str, Form()], flight_log: Annotated[UploadFile, File()]
+):
+    try:
+        processed_data = await get_processed_data(uav_model, flight_log)
+        return processed_data
+    except Exception as e:
+        print(f"[HUB] ERROR in get_processed: {e}")
+        raise HTTPException(status_code=500, detail=f"Server Error: {str(e)}")
 
-    job_id = job_queue.pop(0)
-    job = jobs[job_id]
-    print(f"\n[NODE] Node CONNECTED. Handing off Job {job_id} ({job['uav_model']})")
-    return {"job_id": job_id, "uav_model": job["uav_model"], "data": job["data"]}
 
-
-@app.post("/api/node/submit_results")
-async def submit_results(payload: dict):
-    """Nodes call this to return prediction results."""
-    job_id = payload.get("job_id")
-    results = payload.get("results")
-
-    if job_id in jobs:
-        jobs[job_id]["results"] = results
-        jobs[job_id]["status"] = "completed"
-        print(f"[NODE] SUCCESS: Node returned results for Job {job_id}")
-        return {"status": "success"}
-
-    print(f"[NODE] ERROR: Node tried to submit results for UNKNOWN Job {job_id}")
-    raise HTTPException(status_code=404, detail="Job not found")
+@app.post("/api/federated_averaging")
+async def federated_averaging(
+    uav_model: Annotated[str, Form()],
+    weights: Annotated[str, Form()],
+):
+    try:
+        await federated_average(uav_model, weights)
+        return {"status": "Federated averaging completed."}
+    except Exception as e:
+        print(f"[HUB] ERROR in federated_averaging: {e}")
+        raise HTTPException(status_code=500, detail=f"Server Error: {str(e)}")
 
 
 # -----------------------
