@@ -19,9 +19,10 @@ async def process_job(job_id, uav_model, csv_data):
     print(f"Running trajectory prediction... {job_id}")
 
     def _sync_process():
-        df = pd.read_csv(io.StringIO(csv_data))
+        df = pd.read_csv(io.StringIO(csv_data), low_memory=False)
         preprocessed = preprocess_data(df.copy(), uav_model)
-        df_clean = df.replace([float("inf"), float("-inf")], 0).ffill().bfill().fillna(0)
+        # Fix FutureWarning by using infer_objects after filling NaNs
+        df_clean = df.replace([float("inf"), float("-inf")], 0).ffill().bfill().fillna(0).infer_objects(copy=False)
         return run_predictions(preprocessed, df_clean, uav_model)
 
     results = await asyncio.to_thread(_sync_process)
