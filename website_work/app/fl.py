@@ -4,7 +4,11 @@ import io
 import numpy as np
 import json
 import asyncio
-from website_work.app.ml_models import preprocess_data, run_predictions, _load_drone_resources
+from website_work.app.ml_models import (
+    preprocess_data,
+    run_predictions,
+    _load_drone_resources,
+)
 from keras.models import load_model, Model
 from typing import cast
 
@@ -21,7 +25,9 @@ async def process_job(job_id, uav_model, csv_data):
     def _sync_process():
         df = pd.read_csv(io.StringIO(csv_data))
         preprocessed = preprocess_data(df.copy(), uav_model)
-        df_clean = df.replace([float("inf"), float("-inf")], 0).ffill().bfill().fillna(0)
+        df_clean = (
+            df.replace([float("inf"), float("-inf")], 0).ffill().bfill().fillna(0)
+        )
         return run_predictions(preprocessed, df_clean, uav_model)
 
     results = await asyncio.to_thread(_sync_process)
@@ -116,58 +122,6 @@ async def get_global_model(uav_model_name):
     return {"weights": weights, "config": model_config}
 
 
-async def get_processed_data(uav_model, flight_log):
-    # Read CSV
-    contents = await flight_log.read()
-
-    def _sync_load_and_preprocess():
-        df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
-        preprocessed_data = preprocess_data(df.copy(), uav_model)
-        resources = _load_drone_resources(uav_model)
-        return df, preprocessed_data, resources
-
-    df, preprocessed_data, resources = await asyncio.to_thread(_sync_load_and_preprocess)
-
-    input_scaler = resources["input_scaler"]
-    target_scaler = resources["target_scaler"]
-    target_cols = resources["target_cols"]
-
-    # Prepare Input Features
-    X_features = preprocessed_data.drop(columns=target_cols, errors="ignore").fillna(0)
-
-    # Scale Inputs
-    if input_scaler:
-        X_scaled = input_scaler.transform(X_features)
-    else:
-        X_scaled = X_features.values
-    X_scaled = np.nan_to_num(X_scaled, nan=0.0)
-
-    # Scale Targets
-    for col in target_cols:
-        if col not in df.columns:
-            df[col] = 0.0
-
-    ground_truth_raw = df[target_cols].fillna(0).values
-    if target_scaler:
-        ground_truth_scaled = target_scaler.transform(ground_truth_raw)
-    else:
-        ground_truth_scaled = ground_truth_raw
-    ground_truth_scaled = np.nan_to_num(ground_truth_scaled, nan=0.0)
-
-    if len(X_scaled) < SEQ_LENGTH + 1:
-        raise ValueError(f"Insufficient data for training. Need at least {SEQ_LENGTH + 1} rows.")
-
-    # Create Sliding Windows
-    X_sequences = []
-    y_targets = []
-
-    for i in range(len(X_scaled) - SEQ_LENGTH):
-        X_sequences.append(X_scaled[i : i + SEQ_LENGTH])
-        y_targets.append(ground_truth_scaled[i + SEQ_LENGTH])
-
-    return {"x": np.array(X_sequences).tolist(), "y": np.array(y_targets).tolist()}
-
-
 client_updates_dict = {}
 MODEL_LIMIT = 1  # Threshold for aggregation
 updates_lock = asyncio.Lock()
@@ -234,4 +188,3 @@ async def federated_average(uav_model, weights_json):
 
         await asyncio.to_thread(_sync_update_and_save)
         print(f"Federated Averaging completed for {uav_model}. Global model updated.")
-
