@@ -31,6 +31,7 @@ async def test():
 
 @app.get("/api/get_global")
 async def get_global(uav_model: str):
+    print(f"Sending the Global Model {uav_model} to the client Hub.")
     try:
         global_model_weights = await get_global_model(uav_model)
         return global_model_weights
@@ -44,6 +45,7 @@ async def federated_averaging(
     uav_model: Annotated[str, Form()],
     weights: Annotated[str, Form()],
 ):
+    print(f"Doing federated averaging on {uav_model}")
     try:
         await federated_average(uav_model, weights)
         return {"status": "Federated averaging completed."}

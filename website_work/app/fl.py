@@ -182,7 +182,8 @@ async def federated_average(uav_model, weights_json):
             global_model.set_weights(avg_weights)
 
             # Atomic save: write to temp, then rename
-            temp_path = model_path + ".tmp"
+            base, ext = os.path.splitext(model_path)
+            temp_path = f"{base}.tmp{ext}"
             global_model.save(temp_path)
             os.replace(temp_path, model_path)
 
